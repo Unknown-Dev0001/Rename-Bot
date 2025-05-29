@@ -3,15 +3,14 @@ from pyrogram.enums import MessageMediaType
 from pyrogram.errors import FloodWait
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
 from hachoir.metadata import extractMetadata
-from helper.ffmpeg import fix_thumb, take_screen_shot, add_metadata
 from hachoir.parser import createParser
+from helper.ffmpeg import fix_thumb, take_screen_shot, add_metadata
 from helper.utils import progress_for_pyrogram, convert, humanbytes, add_prefix_suffix
 from helper.database import jishubotz
 from asyncio import sleep
 from PIL import Image
 from config import Config
 import os, time, re, random, asyncio
-
 
 @Client.on_message(filters.private & (filters.document | filters.audio | filters.video))
 async def rename_start(client, message):
@@ -55,10 +54,7 @@ async def refunc(client, message):
         file = msg.reply_to_message
         media = getattr(file, file.media.value)
         if not "." in new_name:
-            if "." in media.file_name:
-                extn = media.file_name.rsplit('.', 1)[-1]
-            else:
-                extn = "mkv"
+            extn = media.file_name.rsplit('.', 1)[-1] if "." in media.file_name else "mkv"
             new_name = new_name + "." + extn
         await reply_message.delete()
 
@@ -90,13 +86,14 @@ async def doc(bot, update):
     
     file_path = f"downloads/{update.from_user.id}/{new_filename}"
     file = update.message.reply_to_message
+    ms = None  # Initialize here
 
     try:
         if update.message.text != "🚀 Try To Download...  ⚡":
             ms = await update.message.edit("🚀 Try To Download...  ⚡")
     except Exception as e:
         print(f"Error editing message: {e}")
-    
+
     try:
         path = await bot.download_media(
             message=file, 
@@ -105,7 +102,10 @@ async def doc(bot, update):
             progress_args=("🚀 Downloading...  ⚡", ms, time.time())
         )                    
     except Exception as e:
-        return await ms.edit(e)
+        if ms:
+            return await ms.edit(str(e))
+        else:
+            return await update.message.reply_text(str(e))
 
     _bool_metadata = await jishubotz.get_metadata(update.message.chat.id) 
     
@@ -114,7 +114,8 @@ async def doc(bot, update):
         metadata_path = f"Metadata/{new_filename}"
         await add_metadata(path, metadata_path, metadata, ms)
     else:
-        await ms.edit("⏳ Mode Changing...  ⚡")
+        if ms:
+            await ms.edit("⏳ Mode Changing...  ⚡")
 
     duration = 0
     try:
@@ -151,11 +152,12 @@ async def doc(bot, update):
                 width, height, ph_path = await fix_thumb(ph_path_)
             except Exception as e:
                 ph_path = None
-                print(e)  
+                print(e)
 
     try:
         if update.message.text != "💠 Try To Upload...  ⚡":
-            await ms.edit("💠 Try To Upload...  ⚡")
+            if ms:
+                await ms.edit("💠 Try To Upload...  ⚡")
     except Exception as e:
         print(f"Error editing message: {e}")
     
@@ -202,15 +204,20 @@ async def doc(bot, update):
         )
 
     except Exception as e:          
-        os.remove(file_path)
-        if ph_path:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        if ph_path and os.path.exists(ph_path):
             os.remove(ph_path)
-        return await ms.edit(f"**Error:** `{e}`")    
+        if ms:
+            return await ms.edit(f"**Error:** `{e}`")    
+        else:
+            return await update.message.reply_text(f"**Error:** `{e}`")
 
-    await ms.delete() 
-    if ph_path:
+    if ms:
+        await ms.delete()
+    if ph_path and os.path.exists(ph_path):
         os.remove(ph_path)
-    if file_path:
+    if os.path.exists(file_path):
         os.remove(file_path)
 
     await asyncio.sleep(1800)
